@@ -1,5 +1,6 @@
 # all the imports
 #import sqlite3
+import datetime
 from contextlib import closing
 from flask import Flask, request, session, g, redirect, url_for, \
      abort, render_template, flash, jsonify
@@ -20,14 +21,25 @@ def connect_db():
 def init_db():
   '''
   create collections:
-    users: id name location {latitude longitude}
-    questions: id title desc tag user date location {latitude longitude}
-    answers: id question user content
+    users: id ID location {latitude longitude}
+    questions: id title detail tag user date location {latitude longitude}
+    answers: id question username content date rate
   '''
   pass
 
 def get_location():
   return (int(request.args.get('latitude',110)), int(request.args.get('longitude',38)))
+
+
+def update_user(username,latitude,longitude):
+  user = g.db.users.find_one({"ID": username})
+  if user == None:
+    user = {"ID": username,"location":[latitude,longitude]}
+    print(user)
+    g.db.users.insert(user)
+    print(user)
+  else:
+    user["location"] = [latitude,longitude]
 
 @app.before_request
 def before_request():
@@ -58,14 +70,7 @@ def add_user():
   username = request.form["username"]
   lat = int(request.form["latitude"])
   lon = int(request.form["longitude"])
-  user = g.db.users.find_one({"ID": username})
-  if user == None:
-    user = {"ID": username,"location":[lat,lon]}
-    print(user)
-    g.db.users.insert(user)
-    print(user)
-  else:
-    user["location"] = [lat,lon]
+  update_user(username,latitude,longitude)
   #flash('New entry was successfully posted')
   return redirect(url_for('list_users',latitude=lat,longitude=lon))
 
@@ -83,13 +88,37 @@ def get_question(question_id):
         }
     return dumps(r)
 
+@app.route('/ask', methods=['POST'])
+def post_question():
+  fields = ["username","title","detail","tag"]
+  question = {}
+  for field in fields:
+    question[field] = request.form[field]
+  print question
+  question["date"] = datetime.datetime.now()
+  question["location"] = [int(request.form["latitude"]), int(request.form["longitude"])]
+  print question
+  question_id = g.db.questions.insert(question)
+  return dumps({"status":"ok","question_id": str(question_id)})
 
 @app.route('/reply/<question_id>', methods=['POST'])
 def reply(question_id):
   q = g.db.questions.find_one({"_id": ObjectId(question_id)})
   if q == None:
     abort(404)
-  return "ok"
+  username = request.form['username']
+  content = request.form['content']
+  date = datetime.datetime.now()
+  rate = 0
+  answer = {
+      "username":username,
+      "question":question_id,
+      "date": date,
+      "rate": rate,
+      "content": content
+      }
+  answer_id = g.db.answers.insert(answer)
+  return dumps({"status":"ok","answer_id": str(answer_id)})
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
